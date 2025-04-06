@@ -1,24 +1,29 @@
 from flask import Flask, jsonify
-from flask_pymongo import PyMongo
-from dotenv import load_dotenv
+from pymongo import MongoClient
+from pymongo.server_api import ServerApi
 import os
+from dotenv import load_dotenv
 
-# Load biến môi trường từ file .env
 load_dotenv()
 
 app = Flask(__name__)
 
-# Cấu hình MongoDB Atlas
-app.config["MONGO_URI"] = os.getenv("MONGO_URI")
-mongo = PyMongo(app)
+mongo_uri = os.getenv("MONGO_URI")
+if mongo_uri is None:
+    print("Error: MongoDB URI is not set in the environment.")
+else:
+    print(f"MongoDB URI loaded: {mongo_uri}")
+
+client = MongoClient(mongo_uri, server_api=ServerApi('1'))
 
 def test_db_connection():
     try:
-        mongo.db.command("ping")
+        client.admin.command('ping')
         return True
     except Exception as e:
-        print(f"Lỗi kết nối MongoDB: {e}")
-        return False
+        error_message = f"Lỗi kết nối MongoDB: {str(e)}"
+        print(error_message)  
+        return error_message  
 
 @app.route("/", methods=["GET"])
 def home():
@@ -26,10 +31,11 @@ def home():
 
 @app.route("/test-db", methods=["GET"])
 def test_db():
-    if test_db_connection():
+    result = test_db_connection()
+    if result is True:
         return jsonify({"message": "Kết nối MongoDB thành công!"})
     else:
-        return jsonify({"message": "Lỗi kết nối MongoDB!"}), 500
+        return jsonify({"message": "Lỗi kết nối MongoDB!", "error": result}), 500
 
 if __name__ == "__main__":
     app.run(debug=True)
