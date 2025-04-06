@@ -9,6 +9,8 @@ load_dotenv()
 
 app = Flask(__name__)
 
+CORS(app, resources={r"/*": {"origins": "https://ahp-app-fe.onrender.com"}})
+
 mongo_uri = os.getenv("MONGO_URI")
 if mongo_uri is None:
     print("Error: MongoDB URI is not set in the environment.")
@@ -23,7 +25,7 @@ def test_db_connection():
         return True
     except Exception as e:
         error_message = f"Lỗi kết nối MongoDB: {str(e)}"
-        print(error_message)  
+        print(error_message)
         return error_message  
 
 @app.route("/", methods=["GET"])
