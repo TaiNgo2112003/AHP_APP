@@ -4,3 +4,4 @@ python-dotenv
 gunicorn
 pymongo
 flask-cors
+numpy
