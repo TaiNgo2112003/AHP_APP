@@ -110,6 +110,8 @@ def validate_comparisons(comparisons, criteria_ids):
     return True, ""
 
 # Criteria API Endpoints (Step 01)
+from datetime import datetime
+
 @app.route('/api/criteria', methods=['GET', 'POST'])
 def manage_criteria():
     if request.method == 'GET':
@@ -118,7 +120,7 @@ def manage_criteria():
             '_id': str(c['_id']),
             'name': c['name'],
             'description': c.get('description', ''),
-            'created_at': c.get('created_at', '')
+            'created_at': c.get('created_at', '').isoformat() if c.get('created_at') else ''
         } for c in criteria])
     
     elif request.method == 'POST':
@@ -126,16 +128,21 @@ def manage_criteria():
         if not data.get('name'):
             return jsonify({'error': 'Name is required'}), 400
             
+        now = datetime.utcnow()
         new_criterion = {
             'name': data['name'],
             'description': data.get('description', ''),
-            'created_at': datetime.utcnow()
+            'created_at': now
         }
         result = criteria_col.insert_one(new_criterion)
+
         return jsonify({
             '_id': str(result.inserted_id),
-            **new_criterion
+            'name': new_criterion['name'],
+            'description': new_criterion['description'],
+            'created_at': now.isoformat()  # 👈 thêm dòng này để tránh lỗi
         }), 201
+
 # Location API Endpoints (Step 02)
 @app.route('/api/locations', methods=['GET', 'POST'])
 def manage_locations():
@@ -147,7 +154,7 @@ def manage_locations():
             'address': loc['address'],
             'coordinates': loc.get('coordinates', {}),
             'scores': loc.get('scores', {}),
-            'created_at': loc.get('created_at', '')
+            'created_at': loc.get('created_at', '').isoformat() if loc.get('created_at') else ''
         } for loc in locations])
     
     elif request.method == 'POST':
@@ -155,17 +162,22 @@ def manage_locations():
         if not data.get('name') or not data.get('address'):
             return jsonify({'error': 'Name and address are required'}), 400
             
+        now = datetime.utcnow()
         new_location = {
             'name': data['name'],
             'address': data['address'],
             'coordinates': data.get('coordinates', {}),
             'scores': data.get('scores', {}),
-            'created_at': datetime.utcnow()
+            'created_at': now
         }
         result = locations_col.insert_one(new_location)
         return jsonify({
             '_id': str(result.inserted_id),
-            **new_location
+            'name': new_location['name'],
+            'address': new_location['address'],
+            'coordinates': new_location['coordinates'],
+            'scores': new_location['scores'],
+            'created_at': now.isoformat()  # 👈 đây là phần cần thêm
         }), 201
 
 # Pairwise Comparisons API Endpoints (Step 03)
