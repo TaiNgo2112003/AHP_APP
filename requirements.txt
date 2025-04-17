@@ -6,3 +6,4 @@ pymongo
 flask-cors
 numpy
 pandas
+tabulate
