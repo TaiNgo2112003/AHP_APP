@@ -7,4 +7,5 @@ flask-cors
 numpy
 pandas
 tabulate
+google
 genai
