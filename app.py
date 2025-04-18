@@ -8,11 +8,16 @@ from datetime import datetime
 from dotenv import load_dotenv
 import pandas as pd
 from tabulate import tabulate
+import google.generativeai as genai
 
 # Load environment variables
 load_dotenv()
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": ["http://localhost:3000", "https://ahp-app-fe.onrender.com"]}}, supports_credentials=True)
+API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyAy8qnAJCaNHBx7b2NKXg6R9E8Glr7rlvQ")
+MODEL_NAME = "gemini-1.5-pro"
+genai.configure(api_key=API_KEY)
+model = genai.GenerativeModel(MODEL_NAME)
 
 # MongoDB Connection
 mongo_uri = os.getenv("MONGO_URI")
@@ -388,6 +393,48 @@ def get_user_history(user_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+#You can use 'AIzaSyAy8qnAJCaNHBx7b2NKXg6R9E8Glr7rlvQ', this api key of gemini
+#MODEL_NAME = "gemini-1.5-pro"
+#API_URL = f"https://generativelanguage.googleapis.com/v1/models/{MODEL_NAME}:generateContent?key={API_KEY}"
+# Gemini AI to predict AHP Endpoints 
+@app.route('/api/chatbox', methods=['POST'])
+def chatbox_ai():
+    try:
+        data = request.get_json()
+        user_message = data.get('message', '')
+        
+        if not user_message:
+            return jsonify({"error": "Message is required"}), 400
+        
+        prompt = f"""
+            Bạn là chuyên gia phân tích AHP (Analytic Hierarchy Process). 
+            Hãy trả lời câu hỏi về quyết định lựa chọn địa điểm hoặc phân tích đa tiêu chí.
+        Câu hỏi: {user_message}
+        """
+        
+        response = model.generate_content(prompt)
+        return jsonify({
+            "response": response.text,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/ahp/criteria/suggestions', methods=['GET'])
+def get_criteria_suggestions():
+    try:
+        # Lấy đề xuất tiêu chí từ Gemini
+        response = model.generate_content("""
+        Liệt kê các tiêu chí thường dùng trong AHP để đánh giá địa điểm, 
+        mỗi tiêu chí trên 1 dòng, không đánh số
+        """)
+        
+        criteria = [c.strip() for c in response.text.split('\n') if c.strip()]
+        return jsonify({"criteria": criteria})
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 if __name__ == "__main__":
     app.run(debug=True)
 
