@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 import pandas as pd
 from tabulate import tabulate
 import google.generativeai as genai
-
 # Load environment variables
 load_dotenv()
 app = Flask(__name__)
@@ -115,9 +114,9 @@ def validate_comparisons(comparisons, criteria_ids):
     return True, ""
 
 # Criteria API Endpoints (Step 01)
-from datetime import datetime
 
-@app.route('/api/criteria', methods=['GET', 'POST'])
+
+@app.route('/api/criteria', methods=['GET', 'POST', 'DELETE'])
 def manage_criteria():
     if request.method == 'GET':
         criteria = list(criteria_col.find({}, {'_id': 1, 'name': 1, 'description': 1, 'created_at': 1}))
@@ -127,12 +126,12 @@ def manage_criteria():
             'description': c.get('description', ''),
             'created_at': c.get('created_at', '').isoformat() if c.get('created_at') else ''
         } for c in criteria])
-    
+
     elif request.method == 'POST':
         data = request.json
         if not data.get('name'):
             return jsonify({'error': 'Name is required'}), 400
-            
+
         now = datetime.utcnow()
         new_criterion = {
             'name': data['name'],
@@ -145,11 +144,26 @@ def manage_criteria():
             '_id': str(result.inserted_id),
             'name': new_criterion['name'],
             'description': new_criterion['description'],
-            'created_at': now.isoformat()  # 👈 thêm dòng này để tránh lỗi
+            'created_at': now.isoformat()
         }), 201
 
+    elif request.method == 'DELETE':
+        data = request.json
+        criterion_id = data.get('_id')
+        print(f"Deleting criterion with ID: {criterion_id}")
+        if not criterion_id:
+            return jsonify({'error': '_id is required'}), 400
+
+        try:
+            result = criteria_col.delete_one({'_id': ObjectId(criterion_id)})
+            if result.deleted_count == 0:
+                return jsonify({'error': 'Criterion not found'}), 404
+            return jsonify({'message': 'Criterion deleted'}), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 400
+
 # Location API Endpoints (Step 02)
-@app.route('/api/locations', methods=['GET', 'POST'])
+@app.route('/api/locations', methods=['GET', 'POST', 'DELETE'])
 def manage_locations():
     if request.method == 'GET':
         locations = list(locations_col.find({}))
@@ -184,6 +198,19 @@ def manage_locations():
             'scores': new_location['scores'],
             'created_at': now.isoformat()  # 👈 đây là phần cần thêm
         }), 201
+    elif request.method == 'DELETE':
+        data = request.json
+        location_id = data.get('_id')
+        print(f"Deleting location with ID: {location_id}")
+        if not location_id:
+            return jsonify({'error': 'location_id is required'}), 400
+        try:
+            result = locations_col.delete_one({'_id': ObjectId(location_id)})
+            if result.deleted_count == 0:
+                return jsonify({'error': 'Location not found'}), 404
+            return jsonify({'message': 'Location deleted'}), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 400
 
 # Pairwise Comparisons API Endpoints (Step 03)
 @app.route('/api/pairwise', methods=['POST'])
