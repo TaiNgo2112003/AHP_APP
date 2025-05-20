@@ -13,8 +13,8 @@ import google.generativeai as genai
 load_dotenv()
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": ["http://localhost:3000", "https://ahp-app-fe.onrender.com"]}}, supports_credentials=True)
-API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyAy8qnAJCaNHBx7b2NKXg6R9E8Glr7rlvQ")
-MODEL_NAME = "gemini-1.5-pro"
+API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyDte6xaAsNwx4cuEtnXXQGqMXJP7qtQDDI")
+MODEL_NAME = "gemini-2.0-flash"
 genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel(MODEL_NAME)
 
@@ -462,6 +462,117 @@ def get_criteria_suggestions():
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
+    #This function is used to normalize the pairwise comparison matrix with import excel file
+def normalize_matrix(matrix):
+    column_sums = np.sum(matrix, axis=0)
+    return matrix / column_sums
+
+def calculate_priority_vector(matrix):
+    normalized = normalize_matrix(matrix)
+    return np.mean(normalized, axis=1)
+
+def calculate_consistency_ratio(matrix, priority_vector):
+    n = matrix.shape[0]
+    weighted_sum = np.dot(matrix, priority_vector)
+    lambda_max = np.sum(weighted_sum / priority_vector) / n
+    CI = (lambda_max - n) / (n - 1)
+    RI_dict = {1: 0, 2: 0, 3: 0.58, 4: 0.90, 5: 1.12,
+               6: 1.24, 7: 1.32, 8: 1.41, 9: 1.45, 10: 1.49}
+    RI = RI_dict.get(n, 1.49)
+    CR = CI / RI if RI != 0 else 0
+    return CR, lambda_max
+
+@app.route('/api/calculate', methods=['POST'])
+def calculate():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+    file = request.files['file']
+    try:
+        xl = pd.ExcelFile(file)
+
+        # Step 1: Criteria matrix
+        criteria_df = xl.parse('CriteriaMatrix', index_col=0)
+        criteria_names = criteria_df.index.tolist()
+        
+        def safe_eval(x):
+            try:
+                return eval(str(x))
+            except:
+                return np.nan  # hoặc 0 nếu bạn muốn xử lý giá trị lỗi
+
+        criteria_matrix = criteria_df.applymap(safe_eval).values
+        criteria_pv = calculate_priority_vector(criteria_matrix)
+        criteria_cr, criteria_lambda = calculate_consistency_ratio(criteria_matrix, criteria_pv)
+
+        if criteria_cr >= 0.1:
+            return jsonify({'error': f'Criteria matrix is inconsistent (CR={round(criteria_cr, 4)})'}), 400
+
+        # Step 2: Alternatives matrices
+        alt_vectors = {}
+        alt_names = None
+        consistency_report = {}
+        for i, criterion in enumerate(criteria_names):
+            sheet_name = f"Alt_{criterion}"
+            if sheet_name not in xl.sheet_names:
+                return jsonify({'error': f'Sheet {sheet_name} is missing'}), 400
+
+            alt_df = xl.parse(sheet_name, index_col=0)
+            if alt_names is None:
+                alt_names = alt_df.index.tolist()
+            elif alt_df.index.tolist() != alt_names:
+                return jsonify({'error': f'Alternatives mismatch in {sheet_name}'}), 400
+
+            alt_matrix = alt_df.applymap(safe_eval).values
+            alt_pv = calculate_priority_vector(alt_matrix)
+            cr, lam = calculate_consistency_ratio(alt_matrix, alt_pv)
+
+            consistency_report[criterion] = {
+                "consistency_ratio": round(cr, 4),
+                "lambda_max": round(lam, 4),
+                "is_consistent": cr < 0.1
+            }
+
+            if cr >= 0.1:
+                return jsonify({'error': f'Matrix {sheet_name} is inconsistent (CR={round(cr, 4)})'}), 400
+
+            alt_vectors[criterion] = alt_pv
+
+        # Step 3: Synthesis
+        final_scores = np.zeros(len(alt_names))
+        for i, criterion in enumerate(criteria_names):
+            final_scores += criteria_pv[i] * np.array(alt_vectors[criterion])
+
+        result = {
+            "criteria_priority_vector": dict(zip(criteria_names, criteria_pv.round(4))),
+            "criteria_consistency_ratio": round(criteria_cr, 4),
+            "alternatives": {
+                name: round(score, 4) for name, score in zip(alt_names, final_scores)
+            },
+            "per_criterion_alternative_priority": {
+                crit: dict(zip(alt_names, alt_vectors[crit].round(4))) for crit in alt_vectors
+            },
+            "consistency_report": consistency_report
+        }
+        def convert_to_serializable(obj):
+            if isinstance(obj, (np.integer, np.floating, np.bool_)):
+                return obj.item()
+            elif isinstance(obj, dict):
+                return {k: convert_to_serializable(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_to_serializable(i) for i in obj]
+            return obj
+
+        serializable_result = convert_to_serializable(result)
+        print("Final Scores:", serializable_result)
+        return jsonify(serializable_result)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == "__main__":
     app.run(debug=True)
 
